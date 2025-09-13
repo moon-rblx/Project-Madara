@@ -46,7 +46,7 @@ local function patchQuakeLibrary()
             end
 
             local function wrapDropdown(self, originalDropdownMethod, dropdownProperty)
-                local currentValue = dropdownProperty.Multiselect and {} or (dropdownProperty.Default or '')
+                local currentValue = dropdownProperty.Multiselect and (dropdownProperty.Default or {}) or (dropdownProperty.Default or '')
                 local originalCallback = dropdownProperty.Callback
 
                 dropdownProperty.Callback = function(value)
@@ -165,6 +165,9 @@ local loadedNPCs = workspace:FindFirstChild('NPCs')
 local Players = game:GetService('Players')
 local Player = Players.LocalPlayer
 local Data = Player:WaitForChild('Data')
+local PlayerGui = Player:WaitForChild('PlayerGui')
+local Main_ScreenGui = PlayerGui:FindFirstChild('Main')
+local Quest = Main_ScreenGui:FindFirstChild('Quest')
 
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local Notification = require(ReplicatedStorage.Notification)
@@ -181,7 +184,7 @@ end
 local function getListBy(name)
     local list = {}
 
-    for _, value in ipairs(Import[name]) do
+    for _, value in pairs(Import[name]) do
         table.insert(list, value)
     end
 
@@ -191,30 +194,44 @@ end
 local function reverseGetListBy(name)
     local list = {}
 
-    for key, _ in ipairs(Import[name]) do
+    for key, _ in pairs(Import[name]) do
         table.insert(list, key)
     end
 
     return list
 end
 
-local Islands = reverseGetListBy('Islands')
 local Mobs = getListBy('Mobs')
+local Islands = reverseGetListBy('Islands')
 
-local function getClosestEnemy(name)
+local function getClosestEnemy(target)
     local playerHRP = (Player.Character or Player.CharacterAdded:Wait()):WaitForChild('HumanoidRootPart')
     local shortestDistance = math.huge
 
-    for _, container in ipairs{Enemies:GetChildren(), ReplicatedStorage:GetChildren()} do
+    for _, container in ipairs{Enemies and Enemies:GetChildren() or {}, ReplicatedStorage:GetChildren()} do
         if #container == 0 then
             continue
         end
 
         for _, child in ipairs(container) do
-            if child and child.Name == name and child:FindFirstChild('Humanoid') and child.Humanoid:GetState() ~= Enum.HumanoidStateType.Dead and child:FindFirstChild('HumanoidRootPart') then
+            if child and child.Name == target and child:FindFirstChild('Humanoid') and child.Humanoid:GetState() ~= Enum.HumanoidStateType.Dead and child:FindFirstChild('HumanoidRootPart') then
                 local distance = CoreUtils.CalculateDistance(playerHRP.Position, child.HumanoidRootPart.Position)
                 if distance < shortestDistance then
                     shortestDistance = distance
+                end
+            end
+        end
+    end
+
+    for _, container in ipairs{Enemies and Enemies:GetChildren() or {}, ReplicatedStorage:GetChildren()} do
+        if #container == 0 then
+            continue
+        end
+
+        for _, child in ipairs(container) do
+            if child and child.Name == target and child:FindFirstChild('Humanoid') and child.Humanoid:GetState() ~= Enum.HumanoidStateType.Dead and child:FindFirstChild('HumanoidRootPart') then
+                local distance = CoreUtils.CalculateDistance(playerHRP.Position, child.HumanoidRootPart.Position)
+                if distance == shortestDistance then
                     return child
                 end
             end
@@ -222,41 +239,55 @@ local function getClosestEnemy(name)
     end
 end
 
+local function attackMob(target)
+
+end
+
 local function getQuest(level)
     local team = Player.Team
 
     if team and level < 10 then
-        if team == 'Pirates' then
-            return {name = 'BanditQuest1', index = 1, npc = 'Bandit Quest Giver', island = 'Windmill'}
-        elseif team == 'Marines' then
-            return {name = 'MarineQuest', index = 1, npc = 'Marine Leader', island = 'MarineStarter'}
+        if team.Name == 'Pirates' then
+            return {name = 'BanditQuest1', index = 1, npc = 'Bandit Quest Giver', mob = 'Bandit', island = 'Windmill'}
+        elseif team.Name == 'Marines' then
+            return {name = 'MarineQuest', index = 1, npc = 'Marine Leader', mob = 'Trainee', island = 'MarineStarter'}
         end
+    elseif level >= 10 and level < 15 then
+        return {name = 'JungleQuest', index = 1, npc = 'Adventurer', mob = 'Monkey', island = 'Jungle'}
+    elseif level >= 15 and level < 20 then
+        return {name = 'JungleQuest', index = 2, npc = 'Adventurer', mob = 'Gorilla', island = 'Jungle'}
+    elseif level >= 20 and level < 30 then
+        return {name = 'JungleQuest', index = 3, npc = 'Adventurer', mob = 'Great Gorilla King', island = 'Jungle'}
     end
 end
 
 local function autoFarm(target, method)
     if method == 'Normal' then
         local mob = getClosestEnemy(target)
-        CoreUtils.TweenTo(Player, CFrame.new(mob.HumanoidRootPart.Position + Vector3.new(0, 10, 0)), Options.tweenSpeed.Value)
+        if mob and mob:FindFirstChild('HumanoidRootPart') then
+            CoreUtils.TweenTo(Player, CFrame.new(mob.HumanoidRootPart.Position + Vector3.new(0, 10, 0)), Options.tweenSpeed.Value)
+        end
 
     elseif method == 'Level' then
-        local mob = getClosestEnemy(target)
         local quest = getQuest(Data:WaitForChild('Level').Value)
+        if quest then
+            if (Player:GetAttribute('CurrentLocation') or '') ~= Import.Islands[quest.island]
+                or (Player:GetAttribute('ExactLocation') or '') ~= Import.Islands[quest.island] then
 
-        if Player:GetAttribute('CurrentLocation') and Player:GetAttribute('ExactLocation') then
-            if Player:GetAttribute('CurrentLocation') ~= Islands[quest.island]
-                or Player:GetAttribute('ExactLocation') ~= Islands[quest.island] then
-
-                while Player:GetAttribute('ExactLocation') ~= Islands[quest.island]
-                    or Player:GetAttribute('CurrentLocation') ~= Islands[quest.island] do
+                while (Player:GetAttribute('CurrentLocation') or '') ~= Import.Islands[quest.island]
+                    or (Player:GetAttribute('ExactLocation') or '') ~= Import.Islands[quest.island] do
 
                     CoreUtils.TweenTo(Player, Map[quest.island]:GetPivot(), Options.tweenSpeed.Value)
                     task.wait()
                 end
             end
-        end
 
-        CommF_:InvokeServer({'Start Quest', quest.name, quest.index})
+            if Quest and not Quest.Visible then
+                CommF_:InvokeServer('StartQuest', quest.name, quest.index)
+            end
+
+            attackMob(getClosestEnemy(quest.mob))
+        end
     end
 end
 
@@ -275,19 +306,22 @@ Toggles.autoFarm = Main:Toggle({
     Callback = function(...)
         if Toggles.autoFarm.Value then
             while Toggles.autoFarm.Value do
-                if not Options.pickedMob.Value or Options.pickedMob.Value == '' then
-                    Toggles.autoFarm.Value = false
-                    createNotification('<Color=Red>Please select a mob!<Color=/>')
-                    return
-                end
-
                 if not Options.farmingMethod.Value or Options.farmingMethod.Value == '' then
                     Toggles.autoFarm.Value = false
                     createNotification('<Color=Red>Please select a method for farming!<Color=/>')
                     return
                 end
 
-                autoFarm(Options.pickedMob.Value, Options.farmingMethod.Value)
+                if Options.farmingMethod.Value ~= 'Level' then
+                    if not Options.pickedMob.Value or Options.pickedMob.Value == '' then
+                        Toggles.autoFarm.Value = false
+                        createNotification('<Color=Red>Please select a mob!<Color=/>')
+                        return
+                    end
+                end
+
+                local quest = getQuest(Data:WaitForChild('Level').Value)
+                autoFarm((Options.pickedMob.Value or quest.mob), Options.farmingMethod.Value)
                 task.wait()
             end
 
@@ -307,7 +341,7 @@ Options.farmingMethod = Main:Dropdown({
 
 Options.pickedMob = Main:Dropdown({
     Name = 'Mobs',
-    Items = getListBy('Mobs'),
+    Items = Mobs,
     Default = '',
     Callback = function(...) end
 })
@@ -316,7 +350,7 @@ Options.tweenSpeed = Main:Slider({
     Name = 'Tween Speed',
     Min = 0,
     Max = 500,
-    InitialValue = 200,
+    InitialValue = 250,
     Callback = function(...) end
 })
 
@@ -326,10 +360,14 @@ local Skills = Main:Group({
 
 Options.meleeKeybinds = Skills:Dropdown({
     Name = 'Melee Skills',
-    Items = {'M1', 'Z', 'X'},
+    Items = {'M1', 'Z', 'X', 'C', 'V', 'F'},
     Default = '',
     Multiselect = true,
-    Callback = function(...) end
+    Callback = function(values)
+        if #values > 0 then
+            Options.fruitKeybinds.Value = {}
+        end
+    end
 })
 
 Options.fruitKeybinds = Skills:Dropdown({
@@ -337,7 +375,11 @@ Options.fruitKeybinds = Skills:Dropdown({
     Items = {'M1', 'Z', 'X', 'C', 'V', 'F'},
     Default = '',
     Multiselect = true,
-    Callback = function(...) end
+    Callback = function(values)
+        if #values > 0 then
+            Options.meleeKeybinds.Value = {}
+        end
+    end
 })
 
 local Settings = Window:Tab({
@@ -352,7 +394,7 @@ Toggles.enableWaterWalking = Settings:Toggle({
         if Toggles.enableWaterWalking.Value then
             while Toggles.enableWaterWalking.Value do
                 local char = (Player.Character or Player.CharacterAdded:Wait())
-                if char:GetAttribute('WaterWalking') ~= nil and not char:GetAttribute('WaterWalking') then
+                if not char:GetAttribute('WaterWalking') then
                     char:SetAttribute('WaterWalking', true)
                 end
                 task.wait()
