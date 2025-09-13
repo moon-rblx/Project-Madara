@@ -159,22 +159,53 @@ local Import = loadstring(game:HttpGet(BaseURL .. 'moon-rblx/Project-Madara/refs
 local Toggles, Options = {}, {}
 
 local Enemies = workspace:FindFirstChild('Enemies')
-local Map = workspace:FindFirstChild('Map')
 local loadedNPCs = workspace:FindFirstChild('NPCs')
 
 local Players = game:GetService('Players')
 local Player = Players.LocalPlayer
 local Data = Player:WaitForChild('Data')
 local PlayerGui = Player:WaitForChild('PlayerGui')
+local Backpack = Player:WaitForChild('Backpack')
 local Main_ScreenGui = PlayerGui:FindFirstChild('Main')
 local Quest = Main_ScreenGui:FindFirstChild('Quest')
 
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local Notification = require(ReplicatedStorage.Notification)
-local Quests = require(ReplicatedStorage.Quests)
-local Remotes = ReplicatedStorage:FindFirstChild('Remotes')
-local CommF_ = Remotes:FindFirstChild('CommF_')
 local storedNPCs = ReplicatedStorage:FindFirstChild('NPCs')
+local Remotes = ReplicatedStorage:FindFirstChild('Remotes')
+local Modules = ReplicatedStorage:FindFirstChild('Modules')
+local FortBuilderReplicatedSpawnPositionsFolder = ReplicatedStorage:FindFirstChild('FortBuilderReplicatedSpawnPositionsFolder')
+local CommF_ = Remotes:FindFirstChild('CommF_')
+local Net = Modules:FindFirstChild('Net')
+local RegisterAttack = Net:FindFirstChild('RE/RegisterAttack')
+local RegisterHit = Net:FindFirstChild('RE/RegisterHit')
+
+local VirtualUser = game:GetService('VirtualUser')
+
+task.spawn(function()
+    if getconnections then
+        for _, connection in next, getconnections(Player.Idled) do
+            connection:Disable()
+        end
+    end
+
+    Player.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end)
+end)
+
+task.spawn(function()
+    while task.wait() do
+        local char = Player.Character or Player.CharacterAdded:Wait()
+        for _, child in pairs(char:GetChildren()) do
+            if (child:IsA('MeshPart') or child:IsA('Part')) and child.CanCollide then
+                child.CanCollide = false
+            end
+        end
+    end
+end)
 
 local function createNotification(text)
     local notification = Notification.new(text, 5)
@@ -239,8 +270,90 @@ local function getClosestEnemy(target)
     end
 end
 
-local function attackMob(target)
+local function bringEnemies(name)
+    local playerHRP = (Player.Character or Player.CharacterAdded:Wait()):WaitForChild('HumanoidRootPart')
+    local containers = {Enemies, ReplicatedStorage}
 
+    for _, container in ipairs(containers) do
+        if container then
+            for _, enemy in ipairs(container:GetChildren()) do
+                if enemy.Name == name and enemy:FindFirstChild('HumanoidRootPart') then
+                    local enemyHRP = enemy.HumanoidRootPart
+                    local BodyPosition = Instance.new('BodyPosition')
+                    BodyPosition.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+                    BodyPosition.P = 5000
+                    BodyPosition.D = 200
+
+                    BodyPosition.Position = playerHRP.Position - Vector3.new(0, 15, 0)
+                    BodyPosition.Parent = enemyHRP
+
+                    task.delay(0.5, function()
+                        BodyPosition:Destroy()
+                    end)
+                end
+            end
+        end
+    end
+end
+
+local function attackMob(target)
+    local char = (Player.Character or Player.CharacterAdded:Wait())
+
+    local WEAPON_MAPPING = {
+        ['Melee'] = Options.meleeKeybinds.Value,
+        ['Demon Fruit'] = Options.fruitKeybinds.Value
+    }
+
+    local function equipTool(weaponType)
+        for _, child in pairs(char:GetChildren()) do
+            if child:GetAttribute('WeaponType') == weaponType then
+                return true
+            end
+        end
+
+        for _, child in pairs(Backpack:GetChildren()) do
+            if child:GetAttribute('WeaponType') == weaponType then
+                child.Parent = char
+                return true
+            end
+        end
+
+        return false
+    end
+
+    local weaponType = Options.selectedWeapon.Value
+    local skills = WEAPON_MAPPING[weaponType]
+
+    if equipTool(weaponType) then
+        for _, keybind in pairs(skills) do
+            if keybind == 'M1' then
+                local playerHRP = char:FindFirstChild('HumanoidRootPart')
+                local targetEnemies = {}
+
+                for _, container in ipairs{Enemies, ReplicatedStorage} do
+                    if container then
+                        for _, enemy in ipairs(container:GetChildren()) do
+                            local enemyHRP = enemy:FindFirstChild('HumanoidRootPart')
+                            local humanoid = enemy:FindFirstChild('Humanoid')
+
+                            if enemyHRP and humanoid and humanoid:GetState() ~= Enum.HumanoidStateType.Dead then
+                                if enemy.Name == target and (playerHRP.Position - enemyHRP.Position).Magnitude <= 65 then
+                                    table.insert(targetEnemies, {enemy.Name, enemyHRP})
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if #targetEnemies > 0 then
+                    for i = 1, #targetEnemies do
+                        RegisterAttack:FireServer()
+                        RegisterHit:FireServer(targetEnemies[i][2], targetEnemies)
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function getQuest(level)
@@ -258,6 +371,22 @@ local function getQuest(level)
         return {name = 'JungleQuest', index = 2, npc = 'Adventurer', mob = 'Gorilla', island = 'Jungle'}
     elseif level >= 20 and level < 30 then
         return {name = 'JungleQuest', index = 3, npc = 'Adventurer', mob = 'Great Gorilla King', island = 'Jungle'}
+    elseif level >= 30 and level < 40 then
+        return {name = 'BuggyQuest1', index = 1, npc = 'Pirate Adventurer', mob = 'Pirate', island = 'Pirate'}
+    elseif level >= 40 and level < 55 then
+        return {name = 'BuggyQuest1', index = 2, npc = 'Pirate Adventurer', mob = 'Brute', island = 'Pirate'}
+    elseif level >= 55 and level < 60 then
+        return {name = 'BuggyQuest1', index = 3, npc = 'Pirate Adventurer', mob = 'Chef', island = 'Pirate'}
+    elseif level >= 60 and level < 75 then
+        return {name = 'DesertQuest', index = 1, npc = 'Desert Adventurer', mob = 'Desert Bandit', island = 'Desert'}
+    elseif level >= 75 and level < 90 then
+        return {name = 'DesertQuest', index = 2, npc = 'Desert Adventurer', mob = 'Desert Officer', island = 'Desert'}
+    elseif level >= 90 and level < 100 then
+        return {name = 'SnowQuest', index = 1, npc = 'Villager', mob = 'Snow Bandit', island = 'Ice'}
+    elseif level >= 100 and level < 105 then
+        return {name = 'SnowQuest', index = 2, npc = 'Villager', mob = 'Snowman', island = 'Ice'}
+    elseif level >= 105 and level < 120 then
+        return {name = 'SnowQuest', index = 3, npc = 'Villager', mob = 'Yeti', island = 'Ice'}
     end
 end
 
@@ -265,19 +394,19 @@ local function autoFarm(target, method)
     if method == 'Normal' then
         local mob = getClosestEnemy(target)
         if mob and mob:FindFirstChild('HumanoidRootPart') then
-            CoreUtils.TweenTo(Player, CFrame.new(mob.HumanoidRootPart.Position + Vector3.new(0, 10, 0)), Options.tweenSpeed.Value)
+            CoreUtils.TweenTo(Player, CFrame.new(mob.HumanoidRootPart.Position + Vector3.new(0, 15, 0)), Options.tweenSpeed.Value)
         end
-
     elseif method == 'Level' then
         local quest = getQuest(Data:WaitForChild('Level').Value)
         if quest then
+            local mob = getClosestEnemy(quest.mob)
             if (Player:GetAttribute('CurrentLocation') or '') ~= Import.Islands[quest.island]
                 or (Player:GetAttribute('ExactLocation') or '') ~= Import.Islands[quest.island] then
 
                 while (Player:GetAttribute('CurrentLocation') or '') ~= Import.Islands[quest.island]
                     or (Player:GetAttribute('ExactLocation') or '') ~= Import.Islands[quest.island] do
 
-                    CoreUtils.TweenTo(Player, Map[quest.island]:GetPivot(), Options.tweenSpeed.Value)
+                    CoreUtils.TweenTo(Player, (loadedNPCs:FindFirstChild(quest.npc) or storedNPCs:FindFirstChild(quest.npc)):GetPivot(), Options.tweenSpeed.Value)
                     task.wait()
                 end
             end
@@ -286,10 +415,43 @@ local function autoFarm(target, method)
                 CommF_:InvokeServer('StartQuest', quest.name, quest.index)
             end
 
-            attackMob(getClosestEnemy(quest.mob))
+            local function getClosestEnemySpawn(name)
+                local playerHRP = (Player.Character or Player.CharacterAdded:Wait()):WaitForChild('HumanoidRootPart')
+                local closestSpawn, shortestDistance = nil, math.huge
+
+                for _, child in pairs(FortBuilderReplicatedSpawnPositionsFolder:GetChildren()) do
+                    if child.Name:find('^' .. name) then
+                        local distance = CoreUtils.CalculateDistance(playerHRP.Position, child.Position)
+                        if distance < shortestDistance then
+                            shortestDistance = distance
+                            closestSpawn = child
+                        end
+                    end
+                end
+
+                return closestSpawn and closestSpawn.Position or nil
+            end
+
+            local enemySpawn = getClosestEnemySpawn(quest.mob)
+            if enemySpawn then
+                CoreUtils.TweenTo(Player, CFrame.new(enemySpawn + Vector3.new(0, 15, 0)), Options.tweenSpeed.Value)
+            end
+
+            if mob and mob:FindFirstChild('HumanoidRootPart') then
+                bringEnemies(quest.mob)
+                task.wait()
+                attackMob(quest.mob)
+            end
         end
     end
 end
+
+workspace.ChildAdded:Connect(function(child)
+    local char = (Player.Character or Player.CharacterAdded:Wait())
+    if char:GetAttribute('WaterWalking') and child.Name:lower() == 'ice' then
+        child.Transparency = 1
+    end
+end)
 
 local Window = Quake:Window({
     Title = 'Project Madara | Blox Fruits'
@@ -320,6 +482,12 @@ Toggles.autoFarm = Main:Toggle({
                     end
                 end
 
+                if not Options.selectedWeapon.Value or Options.selectedWeapon.Value == ''then
+                    Toggles.autoFarm.Value = false
+                    createNotification('<Color=Red>Please select a weapon for farming!<Color=/>')
+                    return
+                end
+
                 local quest = getQuest(Data:WaitForChild('Level').Value)
                 autoFarm((Options.pickedMob.Value or quest.mob), Options.farmingMethod.Value)
                 task.wait()
@@ -335,7 +503,7 @@ Toggles.autoFarm = Main:Toggle({
 Options.farmingMethod = Main:Dropdown({
     Name = 'Method',
     Items = {'Normal', 'Level'},
-    Default = '',
+    Default = 'Level',
     Callback = function(...) end
 })
 
@@ -358,28 +526,27 @@ local Skills = Main:Group({
     Name = 'Skills',
 })
 
+Options.selectedWeapon = Skills:Dropdown({
+    Name = 'Selected Weapon',
+    Items = {'Melee', 'Demon Fruit'},
+    Default = 'Melee',
+    Callback = function(...) end
+})
+
 Options.meleeKeybinds = Skills:Dropdown({
     Name = 'Melee Skills',
     Items = {'M1', 'Z', 'X', 'C', 'V', 'F'},
-    Default = '',
+    Default = {},
     Multiselect = true,
-    Callback = function(values)
-        if #values > 0 then
-            Options.fruitKeybinds.Value = {}
-        end
-    end
+    Callback = function(...) end
 })
 
 Options.fruitKeybinds = Skills:Dropdown({
     Name = 'Fruit Skills',
     Items = {'M1', 'Z', 'X', 'C', 'V', 'F'},
-    Default = '',
+    Default = {},
     Multiselect = true,
-    Callback = function(values)
-        if #values > 0 then
-            Options.meleeKeybinds.Value = {}
-        end
-    end
+    Callback = function(...) end
 })
 
 local Settings = Window:Tab({
@@ -397,6 +564,7 @@ Toggles.enableWaterWalking = Settings:Toggle({
                 if not char:GetAttribute('WaterWalking') then
                     char:SetAttribute('WaterWalking', true)
                 end
+
                 task.wait()
             end
         end
